@@ -26,7 +26,7 @@ def main():
         with mic as source:
             print("In ascolto...")
             try:
-                audio = recognizer.listen(source, timeout=2, phrase_time_limit=5)
+                audio = recognizer.listen(source, timeout=5, phrase_time_limit=10)
             except Exception as e:
                 print("Errore nell'ascolto:", e)
                 continue
