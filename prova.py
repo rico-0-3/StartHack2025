@@ -9,14 +9,10 @@ def main():
     recognizer = sr.Recognizer()
     recognizer.pause_threshold = 5.0
     mic = sr.Microphone(device_index=1)
-    
-    print("Microfoni disponibili:")
-    for index, name in enumerate(sr.Microphone.list_microphone_names()):
-        print(f"{index}: {name}")
 
     print("Calibrazione del rumore ambientale in corso, attendere...")
     with mic as source:
-        recognizer.adjust_for_ambient_noise(source, duration=2)
+        recognizer.adjust_for_ambient_noise(source, duration=5)
     print("Calibrazione completata. In ascolto per la parola trigger.")
 
     # Lista di lingue da provare: aggiungi o modifica in base alle tue esigenze
@@ -26,7 +22,7 @@ def main():
         with mic as source:
             print("In ascolto...")
             try:
-                audio = recognizer.listen(source, timeout=5, phrase_time_limit=10)
+                audio = recognizer.listen(source, timeout=3, phrase_time_limit=15)
             except Exception as e:
                 print("Errore nell'ascolto:", e)
                 continue
@@ -57,27 +53,7 @@ def main():
                     print("Parole dopo il trigger:", post_trigger)
                     save_text(post_trigger)
                 else:
-                    # Se "ciao" è l'unica parola riconosciuta, attende la frase successiva
-                    print("Trigger rilevato, registrazione della frase successiva. Parla ora (termina con 5 sec di silenzio)...")
-                    with mic as source:
-                        audio2 = recognizer.listen(source)
-                    spoken_text = None
-                    for lang in languages:
-                        try:
-                            spoken_text = recognizer.recognize_google(audio2, language=lang)
-                            if spoken_text:
-                                break
-                        except sr.UnknownValueError:
-                            continue
-                        except Exception as e:
-                            print("Errore durante la registrazione successiva:", e)
-                            spoken_text = None
-                            break
-                    if spoken_text:
-                        print("Hai detto:", spoken_text)
-                        save_text(spoken_text)
-                    else:
-                        print("Nessun testo riconosciuto nella registrazione successiva.")
+                    continue
             else:
                 print("Parola trigger non rilevata, testo ignorato.")
         else:
