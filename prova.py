@@ -1,7 +1,7 @@
 import speech_recognition as sr
 
 def save_text(text):
-    with open("registrazioni.txt", "a", encoding="utf-8") as f:
+    with open("registrazioni.txt", "w", encoding="utf-8") as f:
         f.write(text + "\n")
     print("Testo salvato nel file registrazioni.txt.")
 
