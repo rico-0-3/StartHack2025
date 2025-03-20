@@ -1,22 +1,33 @@
 // App.js
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  TouchableOpacity, 
+  Dimensions, 
+  ScrollView,
+  Animated
+} from 'react-native';
 import { 
   VictoryChart, 
   VictoryCandlestick, 
   VictoryTheme, 
   VictoryAxis, 
-  VictoryTooltip,
   createContainer,
-  VictoryLine
+  VictoryLine,
+  VictoryTooltip
 } from 'victory';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
 
-// Crea il container combinato per zoom e voronoi (tooltip)
+// Container combinato per zoom e tooltip
 const VictoryZoomVoronoiContainer = createContainer("zoom", "voronoi");
 
 export default function App() {
   const [pollingActive, setPollingActive] = useState(false);
+
+  // Interfaccia dati
   interface RecordType {
     timestamp: string;
     open: number;
@@ -24,13 +35,21 @@ export default function App() {
     high: number;
     low: number;
   }
+  
   const [registrazioni, setRegistrazioni] = useState<RecordType[]>([]);
   const [companyName, setCompanyName] = useState("");
-  const [maData, setMaData] = useState<{ x: any; y: number }[]>([]);
+
+  // Stati per SMA
+  const [maData, setMaData] = useState<{ x: Date; y: number }[]>([]);
   const [maWindow, setMaWindow] = useState(20);
   const [showMA, setShowMA] = useState(true);
 
-  // Avvia il polling solo se il bottone è stato premuto (pollingActive true)
+  // Stati per volatilità
+  const [volData, setVolData] = useState<{ x: Date; y: number }[]>([]);
+  const [volWindow, setVolWindow] = useState(2);
+  // La volatilità sarà sempre visibile (nessun bottone per nasconderla)
+
+  // Polling per dati
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (pollingActive) {
@@ -38,8 +57,6 @@ export default function App() {
         try {
           const response = await fetch('http://localhost:5000/registrazioni');
           const json = await response.json();
-          
-          // Controlla se ci sono dati nel JSON
           const companies = Object.keys(json);
           if (companies.length > 0) {
             const selectedCompany = companies[0];
@@ -47,14 +64,14 @@ export default function App() {
             setCompanyName(selectedCompany);
           }
         } catch (error) {
-          console.error('Errore nel fetch:', error);
+          console.error('Error fetching data:', error);
         }
       }, 2000);
     }
     return () => clearInterval(interval);
   }, [pollingActive]);
 
-  // Trasforma i dati ricevuti in un formato compatibile con VictoryCandlestick
+  // Trasforma i dati per il grafico candlestick (senza fallback default)
   const transformedData = registrazioni.length > 0 
     ? registrazioni.map(record => ({
         x: new Date(record.timestamp),
@@ -63,127 +80,243 @@ export default function App() {
         high: record.high,
         low: record.low,
       }))
-    : [
-        { x: new Date("2024-03-20"), open: 181.81, close: 179.73, high: 182.67, low: 174.0 },
-        { x: new Date("2024-03-21"), open: 186.12, close: 178.68, high: 187.65, low: 177.66 },
-        { x: new Date("2024-03-22"), open: 177.01, close: 179.65, high: 180.76, low: 175.05 },
-        { x: new Date("2024-03-25"), open: 172.75, close: 178.63, high: 182.78, low: 172.0 },
-        { x: new Date("2024-03-26"), open: 179.54, close: 177.87, high: 182.59, low: 176.33 },
-        { x: new Date("2024-03-27"), open: 179.93, close: 179.59, high: 181.21, low: 175.41 },
-        { x: new Date("2024-03-28"), open: 179.59, close: 180.49, high: 183.38, low: 178.3 },
-      ];
+    : [];
 
-  // Calcola il trend percentuale
-  const trendPercent = (
-    ((transformedData[transformedData.length - 1].close - transformedData[0].close) /
-      transformedData[0].close) *
-    100
-  ).toFixed(2);
+  // Trend percentuale per il titolo
+  const trendPercent = transformedData.length > 0
+    ? (
+      ((transformedData[transformedData.length - 1].close - transformedData[0].close) /
+        transformedData[0].close) *
+      100
+    ).toFixed(2)
+    : "--";
 
-  // Calcola i limiti per gli assi
+  // Dominio per il grafico candlestick
   const xValues = transformedData.map(d => d.x);
   const yValues = transformedData.reduce((acc: number[], d) => acc.concat([d.open, d.close, d.high, d.low]), []);
-  const minX = new Date(Math.min(...xValues.map(d => d.getTime())));
-  const maxX = new Date(Math.max(...xValues.map(d => d.getTime())));
-  const minY = Math.min(...yValues);
-  const maxY = Math.max(...yValues);
+  const minX = xValues.length ? new Date(Math.min(...xValues.map(d => d.getTime()))) : new Date();
+  const maxX = xValues.length ? new Date(Math.max(...xValues.map(d => d.getTime()))) : new Date();
+  const minY = yValues.length ? Math.min(...yValues) : 0;
+  const maxY = yValues.length ? Math.max(...yValues) : 0;
+  
+  // Se il numero di dati supera 25, usa 25 tick
+  const xTickCount = transformedData.length > 0 ? (transformedData.length > 25 ? 25 : transformedData.length) : 7;
+  const yTickCount = transformedData.length > 0 ? (transformedData.length > 1 ? 10 : transformedData.length) : 7;
 
-  const xTickCount = registrazioni.length > 0 ? (registrazioni.length > 31 ? 31 : registrazioni.length) : 7;
-  const yTickCount = registrazioni.length > 0 ? (registrazioni.length > 1 ? 10 : registrazioni.length) : 7;
-
-  const calculateMovingAverage = (data: any, windowSize: any) => {
+  // Calcola la SMA
+  const calculateMovingAverage = (data: any, windowSize: number) => {
     if (data.length < windowSize) return [];
     const movingAverageData = [];
     for (let i = windowSize - 1; i < data.length; i++) {
       const windowData = data.slice(i - windowSize + 1, i + 1);
-      const sum = windowData.reduce((acc: any, item: any) => acc + item.close, 0);
+      const sum = windowData.reduce((acc: number, item: any) => acc + item.close, 0);
       const avg = sum / windowSize;
       movingAverageData.push({ x: data[i].x, y: avg });
     }
     return movingAverageData;
   };
 
+  // Calcola la volatilità (deviazione standard)
+  const calculateVolatility = (data: typeof transformedData, windowSize: number) => {
+    if (data.length < windowSize) return [];
+    const vol = [];
+    for (let i = windowSize - 1; i < data.length; i++) {
+      const slice = data.slice(i - windowSize + 1, i + 1);
+      const closes = slice.map(item => item.close);
+      const avg = closes.reduce((acc, v) => acc + v, 0) / closes.length;
+      const variance = closes.reduce((acc, v) => acc + (v - avg) ** 2, 0) / closes.length;
+      const stdDev = Math.sqrt(variance);
+      vol.push({ x: data[i].x, y: stdDev });
+    }
+    return vol;
+  };
+
+  // Ricalcola SMA
   useEffect(() => {
     const computedMA = calculateMovingAverage(transformedData, maWindow);
     setMaData(computedMA);
-    console.log("Moving Average Data:", computedMA);
   }, [transformedData, maWindow]);
 
-    // Funzione per rendere i bottoni per la selezione della finestra
-    const renderMAButtons = () => {
-      const options = [10, 20, 50, 100];
-      return (
-        <View style={styles.maButtonContainer}>
+  // Ricalcola volatilità e applica un fattore di scala (se desiderato)
+  const volatilityScaleFactor = 10;
+  useEffect(() => {
+    const computedVol = calculateVolatility(transformedData, volWindow)
+      .map(v => ({ x: v.x, y: v.y * volatilityScaleFactor }));
+    setVolData(computedVol);
+  }, [transformedData, volWindow]);
+
+  // Dati per il grafico dell'indice (valori reali, chiusura)
+  const indexData = transformedData.map(d => ({ x: d.x, y: d.close }));
+
+  // Stato e animazione per il menu di configurazione (colonna destra)
+  // Il menu viene renderizzato solo se sono presenti dati (primo grafico caricato)
+  const [menuVisible, setMenuVisible] = useState(false);
+  const menuWidth = useRef(new Animated.Value(0)).current;
+
+  const toggleMenu = () => {
+    if (menuVisible) {
+      Animated.timing(menuWidth, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: false
+      }).start(() => setMenuVisible(false));
+    } else {
+      setMenuVisible(true);
+      Animated.timing(menuWidth, {
+        toValue: 200,
+        duration: 300,
+        useNativeDriver: false
+      }).start();
+    }
+  };
+
+  // Sezioni di configurazione per SMA (menu a destra)
+  const renderMAConfig = () => {
+    const options = [10, 20, 50, 100];
+    return (
+      <View style={styles.configSection}>
+        <Text style={styles.configLegend}>
+          The yellow line represents the Simple Moving Average (SMA) of the closing prices.
+          Select the period:
+        
+        </Text>
+        <View style={styles.buttonContainer}>
           {options.map(option => (
             <TouchableOpacity
               key={option}
-              style={[
-                styles.maButton,
-                maWindow === option && styles.maButtonSelected
-              ]}
+              style={[styles.button, maWindow === option && styles.buttonSelected]}
               onPress={() => setMaWindow(option)}
             >
-              <Text style={[
-                styles.maButtonText,
-                maWindow === option && styles.maButtonTextSelected
-              ]}>
+              <Text style={[styles.buttonText, maWindow === option && styles.buttonTextSelected]}>
                 {option}
               </Text>
             </TouchableOpacity>
           ))}
-                  <TouchableOpacity
-          style={[styles.maButton, !showMA && styles.maButtonSelected]}
-          onPress={() => setShowMA(prev => !prev)}
-        >
-          <Text style={[
-            styles.maButtonText,
-            !showMA && styles.maButtonTextSelected
-          ]}>
-            {showMA ? "Remove MA" : "Show MA"}
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.button, !showMA && styles.buttonSelected]}
+            onPress={() => setShowMA(prev => !prev)}
+          >
+            <Text style={[styles.buttonText, !showMA && styles.buttonTextSelected]}>
+              {showMA ? "Remove MA" : "Show MA"}
+            </Text>
+          </TouchableOpacity>
         </View>
-      );
-    };
+      </View>
+    );
+  };
+
+  // Sezione di configurazione per la volatilità (menu a destra)
+  const renderVolConfig = () => {
+    const options = [2, 5, 10, 30];
+    return (
+      <View style={styles.configSection}>
+        <Text style={styles.configLegend}>
+          The blue line represent the stock's value.
+          The purple line represents the volatility of the closing prices.
+Select the period:        </Text>
+        <View style={styles.buttonContainer}>
+          {options.map(option => (
+            <TouchableOpacity
+              key={option}
+              style={[styles.button, volWindow === option && styles.buttonSelected]}
+              onPress={() => setVolWindow(option)}
+            >
+              <Text style={[styles.buttonText, volWindow === option && styles.buttonTextSelected]}>
+                {option}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    );
+  };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.card}>
+    <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <View style={styles.outerContainer}>
+        {/* Colonna sinistra: card con grafici */}
+        <View style={styles.leftColumn}>
+          {/* Prima card: grafico candlestick/SMA */}
+          <View style={styles.card}>
+            {pollingActive ? (
+              transformedData.length > 0 ? (
+                <>
+                  <View style={styles.chartHeader}>
+                    <Text style={styles.stockTitle}>{companyName}</Text>
+                    <View style={styles.tickerContainer}>
+                      <Text style={styles.tickerText}>{trendPercent}%</Text>
+                      {parseFloat(trendPercent) > 0 
+                        ? <MaterialCommunityIcons name="arrow-up-bold" size={28} color="#00FF00" />
+                        : <MaterialCommunityIcons name="arrow-down-bold" size={28} color="#FF4500" />
+                      }
+                    </View>
+                  </View>
+                  <View style={styles.chartContainer}>
+                    <VictoryChart
+                      theme={VictoryTheme.material}
+                      width={Dimensions.get('window').width * 0.65}
+                      padding={{ top: 20, bottom: 30, left: 50, right: 20 }}
+                      domain={{ x: [minX, maxX], y: [minY, maxY] }}
+                      containerComponent={<VictoryZoomVoronoiContainer zoomDimension="x" />}
+                    >
+                      <VictoryAxis 
+                        tickCount={xTickCount}
+                        tickFormat={(t) => {
+                          const date = new Date(t);
+                          return `${date.getDate()}/${date.getMonth() + 1}`;
+                        }}
+                        style={{
+                          axis: { stroke: '#ccc' },
+                          tickLabels: { fill: '#ccc' },
+                          grid: { stroke: '#555' }
+                        }}
+                      />
+                      <VictoryAxis 
+                        dependentAxis
+                        tickCount={yTickCount}
+                        style={{
+                          axis: { stroke: '#ccc' },
+                          tickLabels: { fill: '#ccc' },
+                          grid: { stroke: '#555' }
+                        }}
+                      />
+                      <VictoryCandlestick 
+                        data={transformedData}
+                        candleColors={{ positive: "#00FF00", negative: "#FF4500" }}
+                        animate={{ onLoad: { duration: 1000 } }}
+                      />
+                      {showMA && (
+                        <VictoryLine 
+                          data={maData}
+                          labelComponent={<VictoryTooltip />}
+                          labels={({ datum }) => `${datum.x.toLocaleDateString()}\n${datum.y.toFixed(2)}`}
+                          style={{ data: { stroke: "#FFCC00", strokeWidth: 1 } }}
+                        />
+                      )}
+                    </VictoryChart>
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.placeholder}>Waiting for data...</Text>
+              )
+            ) : (
+              <Text style={styles.placeholder}>Press the button to start data fetching</Text>
+            )}
+          </View>
 
-
-        {pollingActive ? (
-          registrazioni.length > 0 ? (
-            <> 
-                  <View style={styles.legendContainer}>
-          <Text style={styles.legendText}>The yellow line represent the SMA. Select the period:</Text>
-        </View>
-                    {renderMAButtons()}
-              <View style={styles.chartHeader}>
-                <Text style={styles.stockTitle}>{companyName}</Text>
-                <View style={styles.tickerContainer}>
-                  <Text style={styles.tickerText}>{trendPercent}%</Text>
-                  {parseFloat(trendPercent) > 0 
-                    ? <MaterialCommunityIcons name="arrow-up-bold" size={28} color="#00FF00" />
-                    : <MaterialCommunityIcons name="arrow-down-bold" size={28} color="#FF4500" />
-                  }
-                </View>
-              </View>
-              <View style={styles.chartContainer}>
+          {/* Seconda card: grafico Indice & Volatilità (mostrata solo se ci sono dati) */}
+          {pollingActive && transformedData.length > 0 && (
+            <View style={styles.card}>
+              <Text style={styles.stockTitle}>Stock & Volatility</Text>
+              {/* Grafico superiore: andamento dell'indice (valori reali) */}
+              <View style={styles.splitChart}>
                 <VictoryChart
                   theme={VictoryTheme.material}
-                  width={Dimensions.get('window').width - 80}
-                  padding={{ top: 20, bottom: 30, left: 50, right: 20 }}
-                  domain={{
-                    x: [minX, maxX],
-                    y: [minY, maxY],
-                  }}
-                  // Usa il container combinato per abilitare zoom e tooltip
-                  containerComponent={
-                    <VictoryZoomVoronoiContainer
-                      // Prop per configurare lo zoom, ad esempio limitandolo all'asse x:
-                      zoomDimension="x"
-                    />
-                  }
+                  width={Dimensions.get('window').width * 0.65}
+                  height={150}
+                  padding={{ top: 20, bottom: 25, left: 50, right: 20 }}
+                  domain={{ x: [minX, maxX] }}
+                  containerComponent={<VictoryZoomVoronoiContainer zoomDimension="x" />}
                 >
                   <VictoryAxis 
                     tickCount={xTickCount}
@@ -199,68 +332,117 @@ export default function App() {
                   />
                   <VictoryAxis 
                     dependentAxis
-                    tickCount={yTickCount}
                     style={{
                       axis: { stroke: '#ccc' },
                       tickLabels: { fill: '#ccc' },
                       grid: { stroke: '#555' }
                     }}
                   />
-                  <VictoryCandlestick 
-                    data={transformedData}
-                    candleColors={{ positive: "#00FF00", negative: "#FF4500" }}
-                    animate={{ onLoad: { duration: 1000 } }}
+                  <VictoryLine 
+                    data={indexData}
+                    labelComponent={<VictoryTooltip />}
+                    labels={({ datum }) => `${datum.x.toLocaleDateString()}\n${datum.y.toFixed(2)}`}
+                    style={{ data: { stroke: "#00BFFF", strokeWidth: 1 } }}
                   />
-                    {/* Aggiungi la linea della media mobile */}
-                    {showMA && (
-                    <VictoryLine 
-                      data={maData}
-                      style={{
-                        data: { stroke: "#FFCC00", strokeWidth: 1 }
-                      }}
-                    />
-                  )}
                 </VictoryChart>
               </View>
-            </>
-          ) : (
-            <Text style={styles.placeholder}>In attesa dei dati...</Text>
-          )
-        ) : (
-          <Text style={styles.placeholder}>Premi il bottone per iniziare la lettura dei dati</Text>
+              {/* Grafico inferiore: volatilità (valori reali) */}
+              <View style={styles.splitChart}>
+                <VictoryChart
+                  theme={VictoryTheme.material}
+                  width={Dimensions.get('window').width * 0.65}
+                  height={150}
+                  padding={{ top: 20, bottom: 30, left: 50, right: 20 }}
+                  domain={{ x: [minX, maxX] }}
+                  containerComponent={<VictoryZoomVoronoiContainer zoomDimension="x" />}
+                >
+                  <VictoryAxis 
+                    tickCount={xTickCount}
+                    tickFormat={(t) => {
+                      const date = new Date(t);
+                      return `${date.getDate()}/${date.getMonth() + 1}`;
+                    }}
+                    style={{
+                      axis: { stroke: '#ccc' },
+                      tickLabels: { fill: '#ccc' },
+                      grid: { stroke: '#555' }
+                    }}
+                  />
+                  <VictoryAxis 
+                    dependentAxis
+                    style={{
+                      axis: { stroke: '#ccc' },
+                      tickLabels: { fill: '#ccc' },
+                      grid: { stroke: '#555' }
+                    }}
+                  />
+                  <VictoryLine 
+                    data={volData}
+                    labelComponent={<VictoryTooltip />}
+                    labels={({ datum }) => `${datum.x.toLocaleDateString()}\n${datum.y.toFixed(2)}`}
+                    style={{ data: { stroke: "#A020F0", strokeWidth: 1 } }}
+                  />
+                </VictoryChart>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Colonna destra: menu di configurazione a scomparsa (visibile solo se ci sono dati) */}
+        {pollingActive && transformedData.length > 0 && (
+          <Animated.View style={[styles.rightColumn, { width: menuWidth }]}>
+            {menuVisible && (
+              <View>
+                {renderMAConfig()}
+                {renderVolConfig()}
+              </View>
+            )}
+          </Animated.View>
         )}
       </View>
+
+      {/* Bottone per avviare il polling */}
       {!pollingActive && (
-  <TouchableOpacity
-    style={styles.siriButton}
-    onPress={() => setPollingActive(true)}
-  >
-    <MaterialCommunityIcons name="microphone" size={32} color="#fff" />
-  </TouchableOpacity>
-)}
-    </View>
+        <TouchableOpacity style={styles.siriButton} onPress={() => setPollingActive(true)}>
+          <MaterialCommunityIcons name="microphone" size={32} color="#fff" />
+        </TouchableOpacity>
+      )}
+
+      {/* Bottone per mostrare/nascondere il menu di configurazione (visibile solo se ci sono dati) */}
+      {pollingActive && transformedData.length > 0 && (
+        <TouchableOpacity style={styles.menuToggle} onPress={toggleMenu}>
+          <MaterialCommunityIcons name={menuVisible ? "close" : "menu"} size={28} color="#fff" />
+        </TouchableOpacity>
+      )}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  scrollContainer: {
+    flexGrow: 1,
     padding: 20,
     backgroundColor: '#121212',
     alignItems: 'center',
-    justifyContent: 'center',
+  },
+  outerContainer: {
+    flexDirection: 'row',
+    width: '100%',
+  },
+  leftColumn: {
+    flex: 3,
+    paddingRight: 10,
+  },
+  rightColumn: {
+    paddingLeft: 10,
+    overflow: 'hidden',
   },
   card: {
-    width: '100%',
-    height: '80%',
-    minHeight: 300,
     backgroundColor: '#1e1e1e',
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#333',
     padding: 20,
-    flexDirection: 'column',
-    justifyContent: 'flex-start',
     marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -274,26 +456,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   chartHeader: {
-    width: '100%',
-    height: '10%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
-    marginTop: 30,
   },
   stockTitle: {
     fontSize: 28,
     fontWeight: '900',
     color: '#fff',
-    marginLeft: 10,
   },
   tickerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 10,
-    marginTop: 30,
-    marginBottom: 20,
   },
   tickerText: {
     fontSize: 28,
@@ -302,10 +477,11 @@ const styles = StyleSheet.create({
     marginRight: 5,
   },
   chartContainer: {
-    flex: 1,
     width: '100%',
-    height: '100%',
-    marginBottom: 0,
+    height: 300,
+  },
+  splitChart: {
+    marginBottom: 10,
   },
   siriButton: {
     width: 70,
@@ -314,37 +490,50 @@ const styles = StyleSheet.create({
     backgroundColor: '#007BFF',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 20,
   },
-  legendContainer: {
-    marginBottom: 10,
-    alignItems: 'center',
+  configSection: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#333',
+    padding: 15,
+    marginBottom: 20,
   },
-  legendText: {
+  configLegend: {
     color: '#ccc',
     fontSize: 16,
-  },
-  maButtonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
     marginBottom: 10,
   },
-  maButton: {
+  buttonContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  button: {
     paddingVertical: 5,
     paddingHorizontal: 10,
-    marginHorizontal: 5,
+    margin: 5,
     borderWidth: 1,
     borderColor: '#ccc',
     borderRadius: 5,
   },
-  maButtonSelected: {
+  buttonSelected: {
     backgroundColor: '#FFCC00',
   },
-  maButtonText: {
+  buttonText: {
     color: '#ccc',
     fontSize: 16,
   },
-  maButtonTextSelected: {
+  buttonTextSelected: {
     color: '#000',
     fontWeight: 'bold',
+  },
+  menuToggle: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    backgroundColor: '#444',
+    padding: 10,
+    borderRadius: 25,
   },
 });
