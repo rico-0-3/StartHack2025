@@ -5,19 +5,32 @@ import json
 import time
 import threading
 import os
+import requests
 
 app = Flask(__name__)
 CORS(app)
 FILE_PATH = "registrazioni.json"
 
-def save_text(text):
+def get_response(query: str):
     """
-    Salva il testo in registrazioni.json eliminando ogni contenuto precedente.
+    Esegue una richiesta POST passando il testo riconosciuto come query.
     """
-    data = {"registrazioni": [text]}  # Sostituisce il contenuto precedente con la nuova registrazione
+    url = ("https://idchat-api-containerapp01-dev.orangepebble-16234c4b."
+           "switzerlandnorth.azurecontainerapps.io//query?query={}".format(query))
+    try:
+        response = requests.post(url)
+        return response.json()
+    except Exception as e:
+        print("Errore nella query:", e)
+        return {}
+
+def save_json(data):
+    """
+    Salva il JSON ottenuto dalla query in registrazioni.json.
+    """
     with open(FILE_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    print("Testo salvato nel file registrazioni.json.")
+    print("Risultato della query salvato in registrazioni.json.")
 
 def speech_recognition_loop():
     recognizer = sr.Recognizer()
@@ -30,7 +43,7 @@ def speech_recognition_loop():
         recognizer.adjust_for_ambient_noise(source, duration=5)
     print("Calibrazione completata. In ascolto per la parola trigger.")
 
-    # Lista di lingue da provare: aggiungi o modifica in base alle tue esigenze
+    # Lista di lingue da provare
     languages = ["it-IT", "en-US"]
     
     while True:
@@ -60,12 +73,15 @@ def speech_recognition_loop():
                 print("Trigger 'ciao' rilevato.")
                 parole = recognized_text.lower().split()
                 index = parole.index("ciao")
-                # Se ci sono parole dopo "ciao", salvale
+                # Se ci sono parole dopo "ciao", le usiamo come query
                 if index < len(parole) - 1:
                     post_trigger = " ".join(parole[index+1:])
-                    print("Parole dopo il trigger:", post_trigger)
-                    save_text(post_trigger)
+                    print("Testo per la query:", post_trigger)
+                    # Passa il testo alla query e salva il risultato in JSON
+                    query_result = get_response(post_trigger)
+                    save_json(query_result)
                 else:
+                    print("Nessun testo dopo il trigger 'ciao'.")
                     continue
             else:
                 print("Parola trigger non rilevata, testo ignorato.")
@@ -76,7 +92,6 @@ def speech_recognition_loop():
 def get_registrazioni():
     """
     Endpoint che restituisce il contenuto del file 'registrazioni.json' in formato JSON.
-    Il frontend React potrà utilizzarlo per aggiornare il grafico in base alle registrazioni.
     """
     if os.path.exists(FILE_PATH):
         with open(FILE_PATH, "r", encoding="utf-8") as f:
