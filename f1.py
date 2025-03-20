@@ -2,27 +2,27 @@ import requests
 import json
 import pandas as pd
 
-def companydatasearch(query:str):
+def get_response(query:str):
     url = ("https://idchat-api-containerapp01-dev.orangepebble-16234c4b."
-           "switzerlandnorth.azurecontainerapps.io//companydatasearch"
-           f"?query={query}")
+           f"switzerlandnorth.azurecontainerapps.io//query?query={query}")
+
     response = requests.post(url)
+    print(response.json())
     return response.json()
 
-
 # Esempio di utilizzo
-query = "BBVA : employee"
-resp = companydatasearch(query)
-# 1) Fai il parsing del campo "object" per ottenere un dict
-# Adesso prendiamo la stringa JSON contenuta in resp["object"]
-object_str = resp["object"]      # <--- questo è una stringa
-obj = json.loads(object_str)     # <--- decodifica la stringa in un nuovo dict
+query = "mostrami i dati di nvidia degli utlimi due giorni"
+resp = get_response(query)
+company_messages = [msg for msg in resp["messages"] if msg.get("name") == "Company_Data_Search"]
 
-# A questo punto obj["data"] è una lista di stringhe JSON: di solito è un elenco con un solo elemento
-data_str = obj["data"][0]
-data_dict = json.loads(data_str) # <--- decodifichiamo di nuovo la stringa
+# Verifichiamo quanti messaggi abbiamo trovato:
+print("Numero di messaggi per i dati aziendali:", len(company_messages))
 
-# Ora data_dict è il dizionario finale con tutte le colonne
-df = pd.DataFrame(data_dict).T
+# Per ogni messaggio, se esiste il campo "item", lo stampiamo:
+for msg in company_messages:
+    if msg.get("item"):
+        print("Dati aziendali:", msg["item"])
+    else:
+        print("Nessun dato trovato in questo messaggio:", msg)
 
-print(df)
+# print(df)
