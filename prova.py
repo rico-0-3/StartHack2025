@@ -54,7 +54,6 @@ def speech_recognition_loop():
                 print("Errore:", e)
                 recognized_text = None
                 break
-        save_text("provaa")
         if recognized_text:
             # Verifica se il testo contiene il trigger "ciao"
             if "ciao" in recognized_text.lower():
