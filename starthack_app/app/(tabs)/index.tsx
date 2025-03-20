@@ -1,6 +1,7 @@
 // App.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Dimensions } from 'react-native';
+import Voice from '@react-native-voice/voice';
 import { 
   VictoryChart, 
   VictoryCandlestick, 
@@ -25,7 +26,54 @@ export default function App() {
   }
   const [registrazioni, setRegistrazioni] = useState<RecordType[]>([]);
   const [companyName, setCompanyName] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [speechText, setSpeechText] = useState("");
+  const recognitionRef = useRef<any>(null);
 
+  // Inizializza l'istanza di SpeechRecognition se disponibile
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.error("Browser non supporta le Web Speech API");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'it-IT';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    
+    recognition.onresult = (event: any) => {
+      const result = event.results[0][0].transcript;
+      console.log("Testo riconosciuto:", result);
+      setSpeechText(result);
+      // Invia la stringa al backend Python
+      fetch('http://localhost:5000/processQuery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: result })
+      })
+      .then(res => res.json())
+      .then(data => {
+        console.log('Risposta dal server:', data);
+      })
+      .catch(err => console.error(err));
+      setIsListening(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Errore nel riconoscimento vocale:", event.error);
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+  }, []);
+
+  const startListening = () => {
+    if (recognitionRef.current) {
+      setIsListening(true);
+      recognitionRef.current.start();
+    }
+  };
   // Avvia il polling solo se il bottone è stato premuto (pollingActive true)
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -171,7 +219,8 @@ export default function App() {
       {!pollingActive && (
   <TouchableOpacity
     style={styles.siriButton}
-    onPress={() => setPollingActive(true)}
+    onPress={startListening}
+    disabled={isListening}
   >
     <MaterialCommunityIcons name="microphone" size={32} color="#fff" />
   </TouchableOpacity>
