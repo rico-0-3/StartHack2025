@@ -55,7 +55,7 @@ export default function App() {
     if (pollingActive) {
       interval = setInterval(async () => {
         try {
-          const response = await fetch('http://10.51.3.104:5000/registrazioni');
+          const response = await fetch('http://localhost:5000/registrazioni');
           const json = await response.json();
           const companies = Object.keys(json);
           if (companies.length > 0) {
