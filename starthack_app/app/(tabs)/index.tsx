@@ -7,7 +7,8 @@ import {
   VictoryTheme, 
   VictoryAxis, 
   VictoryTooltip,
-  createContainer
+  createContainer,
+  VictoryLine
 } from 'victory';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -25,6 +26,7 @@ export default function App() {
   }
   const [registrazioni, setRegistrazioni] = useState<RecordType[]>([]);
   const [companyName, setCompanyName] = useState("");
+  const [maData, setMaData] = useState<{ x: any; y: number }[]>([]);
 
   // Avvia il polling solo se il bottone è stato premuto (pollingActive true)
   useEffect(() => {
@@ -32,7 +34,6 @@ export default function App() {
     if (pollingActive) {
       interval = setInterval(async () => {
         try {
-          console.log("fetching...");
           const response = await fetch('http://localhost:5000/registrazioni');
           const json = await response.json();
           
@@ -87,6 +88,24 @@ export default function App() {
 
   const xTickCount = registrazioni.length > 0 ? (registrazioni.length > 31 ? 31 : registrazioni.length) : 7;
   const yTickCount = registrazioni.length > 0 ? (registrazioni.length > 1 ? 10 : registrazioni.length) : 7;
+
+  const calculateMovingAverage = (data: any, windowSize: any) => {
+    if (data.length < windowSize) return [];
+    const movingAverageData = [];
+    for (let i = windowSize - 1; i < data.length; i++) {
+      const windowData = data.slice(i - windowSize + 1, i + 1);
+      const sum = windowData.reduce((acc: any, item: any) => acc + item.close, 0);
+      const avg = sum / windowSize;
+      movingAverageData.push({ x: data[i].x, y: avg });
+    }
+    return movingAverageData;
+  };
+
+  useEffect(() => {
+    const computedMA = calculateMovingAverage(transformedData, 3);
+    setMaData(computedMA);
+    console.log("Moving Average Data:", computedMA);
+  }, [transformedData]);
 
   return (
     <View style={styles.container}>
@@ -157,6 +176,14 @@ export default function App() {
                     data={transformedData}
                     candleColors={{ positive: "#00FF00", negative: "#FF4500" }}
                     animate={{ onLoad: { duration: 1000 } }}
+                  />
+                    {/* Aggiungi la linea della media mobile */}
+                    <VictoryLine 
+                    data={maData}
+                    style={{
+                      data: { stroke: "#FFCC00", strokeWidth: 2 }
+                    }}
+                    labels={({ datum }) => `MA: ${datum.y.toFixed(2)}`}
                   />
                 </VictoryChart>
               </View>
@@ -231,7 +258,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 10,
     marginTop: 30,
-    marginBottom: 10,
+    marginBottom: 20,
   },
   tickerText: {
     fontSize: 28,

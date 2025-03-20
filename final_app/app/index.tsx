@@ -7,7 +7,8 @@ import {
   VictoryTheme, 
   VictoryAxis, 
   VictoryTooltip,
-  createContainer
+  createContainer,
+  VictoryLine
 } from 'victory';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -25,6 +26,9 @@ export default function App() {
   }
   const [registrazioni, setRegistrazioni] = useState<RecordType[]>([]);
   const [companyName, setCompanyName] = useState("");
+  const [maData, setMaData] = useState<{ x: any; y: number }[]>([]);
+  const [maWindow, setMaWindow] = useState(20);
+  const [showMA, setShowMA] = useState(true);
 
   // Avvia il polling solo se il bottone è stato premuto (pollingActive true)
   useEffect(() => {
@@ -32,7 +36,6 @@ export default function App() {
     if (pollingActive) {
       interval = setInterval(async () => {
         try {
-          console.log("fetching...");
           const response = await fetch('http://localhost:5000/registrazioni');
           const json = await response.json();
           
@@ -88,12 +91,73 @@ export default function App() {
   const xTickCount = registrazioni.length > 0 ? (registrazioni.length > 31 ? 31 : registrazioni.length) : 7;
   const yTickCount = registrazioni.length > 0 ? (registrazioni.length > 1 ? 10 : registrazioni.length) : 7;
 
+  const calculateMovingAverage = (data: any, windowSize: any) => {
+    if (data.length < windowSize) return [];
+    const movingAverageData = [];
+    for (let i = windowSize - 1; i < data.length; i++) {
+      const windowData = data.slice(i - windowSize + 1, i + 1);
+      const sum = windowData.reduce((acc: any, item: any) => acc + item.close, 0);
+      const avg = sum / windowSize;
+      movingAverageData.push({ x: data[i].x, y: avg });
+    }
+    return movingAverageData;
+  };
+
+  useEffect(() => {
+    const computedMA = calculateMovingAverage(transformedData, maWindow);
+    setMaData(computedMA);
+    console.log("Moving Average Data:", computedMA);
+  }, [transformedData, maWindow]);
+
+    // Funzione per rendere i bottoni per la selezione della finestra
+    const renderMAButtons = () => {
+      const options = [10, 20, 50, 100];
+      return (
+        <View style={styles.maButtonContainer}>
+          {options.map(option => (
+            <TouchableOpacity
+              key={option}
+              style={[
+                styles.maButton,
+                maWindow === option && styles.maButtonSelected
+              ]}
+              onPress={() => setMaWindow(option)}
+            >
+              <Text style={[
+                styles.maButtonText,
+                maWindow === option && styles.maButtonTextSelected
+              ]}>
+                {option}
+              </Text>
+            </TouchableOpacity>
+          ))}
+                  <TouchableOpacity
+          style={[styles.maButton, !showMA && styles.maButtonSelected]}
+          onPress={() => setShowMA(prev => !prev)}
+        >
+          <Text style={[
+            styles.maButtonText,
+            !showMA && styles.maButtonTextSelected
+          ]}>
+            {showMA ? "Remove MA" : "Show MA"}
+          </Text>
+        </TouchableOpacity>
+        </View>
+      );
+    };
+
   return (
     <View style={styles.container}>
       <View style={styles.card}>
+
+
         {pollingActive ? (
           registrazioni.length > 0 ? (
             <> 
+                  <View style={styles.legendContainer}>
+          <Text style={styles.legendText}>The yellow line represent the SMA. Select the period:</Text>
+        </View>
+                    {renderMAButtons()}
               <View style={styles.chartHeader}>
                 <Text style={styles.stockTitle}>{companyName}</Text>
                 <View style={styles.tickerContainer}>
@@ -118,17 +182,6 @@ export default function App() {
                     <VictoryZoomVoronoiContainer
                       // Prop per configurare lo zoom, ad esempio limitandolo all'asse x:
                       zoomDimension="x"
-                      // Configura i tooltip come prima:
-                      labels={({ datum }) =>
-                        `Data: ${new Date(datum.x).toLocaleDateString()}\nOpen: ${datum.open}\nHigh: ${datum.high}\nLow: ${datum.low}\nClose: ${datum.close}`
-                      }
-                      labelComponent={
-                        <VictoryTooltip 
-                          flyoutStyle={{ fill: "#1e1e1e", stroke: "#ccc" }}
-                          style={{ fill: "#ccc", fontSize: 12 }}
-                          cornerRadius={5}
-                        />
-                      }
                     />
                   }
                 >
@@ -158,6 +211,15 @@ export default function App() {
                     candleColors={{ positive: "#00FF00", negative: "#FF4500" }}
                     animate={{ onLoad: { duration: 1000 } }}
                   />
+                    {/* Aggiungi la linea della media mobile */}
+                    {showMA && (
+                    <VictoryLine 
+                      data={maData}
+                      style={{
+                        data: { stroke: "#FFCC00", strokeWidth: 1 }
+                      }}
+                    />
+                  )}
                 </VictoryChart>
               </View>
             </>
@@ -231,7 +293,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 10,
     marginTop: 30,
-    marginBottom: 10,
+    marginBottom: 20,
   },
   tickerText: {
     fontSize: 28,
@@ -252,5 +314,37 @@ const styles = StyleSheet.create({
     backgroundColor: '#007BFF',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  legendContainer: {
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  legendText: {
+    color: '#ccc',
+    fontSize: 16,
+  },
+  maButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  maButton: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    marginHorizontal: 5,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 5,
+  },
+  maButtonSelected: {
+    backgroundColor: '#FFCC00',
+  },
+  maButtonText: {
+    color: '#ccc',
+    fontSize: 16,
+  },
+  maButtonTextSelected: {
+    color: '#000',
+    fontWeight: 'bold',
   },
 });
