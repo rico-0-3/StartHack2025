@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 10,
     marginTop: 30,
-    marginBottom: 10,
+    marginBottom: 20,
   },
   tickerText: {
     fontSize: 28,
