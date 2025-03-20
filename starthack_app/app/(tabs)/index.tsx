@@ -5,30 +5,33 @@ import { VictoryChart, VictoryLine, VictoryTheme, VictoryAxis, VictoryVoronoiCon
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function App() {
-  const [showChart, setShowChart] = useState(false);
+  const [pollingActive, setPollingActive] = useState(false);
   const [registrazioni, setRegistrazioni] = useState([]);
 
-    // Esegui il polling dell'endpoint per ottenere le registrazioni
-    useEffect(() => {
-      const fetchRegistrazioni = async () => {
+  // Avvia il polling solo se il bottone è stato premuto (pollingActive true)
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (pollingActive) {
+      interval = setInterval(async () => {
         try {
-          console.log("fetching");
+          console.log("fetching...");
           const response = await fetch('http://localhost:5000/registrazioni');
           const json = await response.json();
           console.log("Registrazioni:", json.registrazioni);
-          // Qui potresti aggiornare lo stato per riflettere i dati ricevuti
-          setRegistrazioni(json.registrazioni);
+          // Se il JSON contiene dati, li aggiorno nello stato
+          if (json.registrazioni && json.registrazioni.length > 0) {
+            setRegistrazioni(json.registrazioni);
+          }
         } catch (error) {
           console.error('Errore nel fetch:', error);
         }
-      };
-  
-      const interval = setInterval(fetchRegistrazioni, 5000);
-      return () => clearInterval(interval);
-    }, []);
+      }, 5000);
+    }
+    return () => clearInterval(interval);
+  }, [pollingActive]);
 
-  // Dati simulati per l'azione Apple
-  const data = [
+  // Determino quale dataset usare: se sono presenti registrazioni uso questi dati, altrimenti dati simulati
+  const dataToDisplay = registrazioni.length < 0 ? registrazioni : [
     { x: 1, y: 150 },
     { x: 2, y: 155 },
     { x: 3, y: 153 },
@@ -65,14 +68,14 @@ export default function App() {
   ];
 
   // Calcolo del trend: se l'ultimo dato è maggiore del primo, trend in rialzo
-  const trend = data[data.length - 1].y - data[0].y;
+  const trend = dataToDisplay[dataToDisplay.length - 1].y - dataToDisplay[0].y;
   const trendIcon = trend > 0 
     ? <MaterialCommunityIcons name="arrow-up-bold" size={28} color="#00FF00" />
     : <MaterialCommunityIcons name="arrow-down-bold" size={28} color="#FF4500" />;
 
-  // Calcola i limiti per x e y dai dati
-  const xValues = data.map(d => d.x);
-  const yValues = data.map(d => d.y);
+  // Calcolo i limiti per x e y dai dati
+  const xValues = dataToDisplay.map(d => d.x);
+  const yValues = dataToDisplay.map(d => d.y);
   const minX = Math.min(...xValues);
   const maxX = Math.max(...xValues);
   const minY = Math.min(...yValues);
@@ -82,73 +85,81 @@ export default function App() {
     <View style={styles.container}>
       {/* Card per i dati */}
       <View style={styles.card}>
-        {showChart ? (
-          <>
-            {/* Header della card con nome e ticker */}
-            <View style={styles.chartHeader}>
-              <Text style={styles.stockTitle}>Apple</Text>
-              <View style={styles.tickerContainer}>
-                <Text style={styles.tickerText}>AAPL</Text>
-                {trendIcon}
+        {pollingActive ? (
+          // Se è attivo il polling, controllo se sono già arrivate registrazioni
+          registrazioni.length > 0 ? (
+            <>
+              {/* Header della card con nome e ticker */}
+              <View style={styles.chartHeader}>
+                <Text style={styles.stockTitle}>Apple</Text>
+                <View style={styles.tickerContainer}>
+                  <Text style={styles.tickerText}>AAPL</Text>
+                  {trendIcon}
+                </View>
               </View>
-            </View>
-            {/* Container del grafico */}
-            <View style={styles.chartContainer}>
-              <VictoryChart
-                theme={VictoryTheme.material}
-                width={Dimensions.get('window').width - 80}
-                domain={{ x: [minX, maxX], y: [minY, maxY] }}
-                padding={{ top: 20, bottom: 30, left: 50, right: 20 }}
-                domainPadding={{ x: 0, y: 0 }}
-                containerComponent={
-                  <VictoryVoronoiContainer
-                    labels={({ datum }) => `x: ${datum.x}, y: ${datum.y}`}
+              {/* Container del grafico */}
+              <View style={styles.chartContainer}>
+                <VictoryChart
+                  theme={VictoryTheme.material}
+                  width={Dimensions.get('window').width - 80}
+                  domain={{ x: [minX, maxX], y: [minY, maxY] }}
+                  padding={{ top: 20, bottom: 30, left: 50, right: 20 }}
+                  containerComponent={
+                    <VictoryVoronoiContainer
+                      labels={({ datum }) => `x: ${datum.x}, y: ${datum.y}`}
+                    />
+                  }
+                  style={{
+                    parent: { backgroundColor: '#1e1e1e' }
+                  }}
+                >
+                  <VictoryAxis 
+                    tickCount={70}
+                    style={{
+                      axis: { stroke: '#ccc' },
+                      tickLabels: { fill: '#ccc' },
+                      grid: { stroke: '#555' }
+                    }}
                   />
-                }
-                // Imposta lo sfondo del grafico
-                style={{
-                  parent: { backgroundColor: '#1e1e1e' }
-                }}
-              >
-                <VictoryAxis 
-                  tickCount={70}
-                  style={{
-                    axis: { stroke: '#ccc' },
-                    tickLabels: { fill: '#ccc' },
-                    grid: { stroke: '#555' }
-                  }}
-                />
-                <VictoryAxis 
-                  dependentAxis 
-                  tickCount={20}
-                  style={{
-                    axis: { stroke: '#ccc' },
-                    tickLabels: { fill: '#ccc' },
-                    grid: { stroke: '#555' }
-                  }}
-                />
-                <VictoryLine 
-                  data={data}
-                  animate={{ onLoad: { duration: 1000 } }}
-                  style={{
-                    data: { 
-                      stroke: trend > 0 ? '#00FF00' : '#FF4500', 
-                      strokeWidth: 3 
-                    }
-                  }}
-                />
-              </VictoryChart>
-            </View>
-          </>
+                  <VictoryAxis 
+                    dependentAxis 
+                    tickCount={20}
+                    style={{
+                      axis: { stroke: '#ccc' },
+                      tickLabels: { fill: '#ccc' },
+                      grid: { stroke: '#555' }
+                    }}
+                  />
+                  <VictoryLine 
+                    data={dataToDisplay}
+                    animate={{ onLoad: { duration: 1000 } }}
+                    style={{
+                      data: { 
+                        stroke: trend > 0 ? '#00FF00' : '#FF4500', 
+                        strokeWidth: 3 
+                      }
+                    }}
+                  />
+                </VictoryChart>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.placeholder}>
+              In attesa dei dati...
+            </Text>
+          )
         ) : (
           <Text style={styles.placeholder}>
-            Qui verranno mostrati i dati ascoltati
+            Premi il bottone per iniziare la lettura dei dati
           </Text>
         )}
       </View>
 
       {/* Bottone rotondo stile Siri */}
-      <TouchableOpacity style={styles.siriButton} onPress={() => setShowChart(true)}>
+      <TouchableOpacity
+        style={styles.siriButton}
+        onPress={() => setPollingActive(true)}
+      >
         <MaterialCommunityIcons name="microphone" size={32} color="#fff" />
       </TouchableOpacity>
     </View>
