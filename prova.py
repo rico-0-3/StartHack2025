@@ -51,7 +51,7 @@ def speech_recognition_loop():
         with mic as source:
             print("In ascolto...")
             try:
-                audio = recognizer.listen(source, timeout=3, phrase_time_limit=15)
+                audio = recognizer.listen(source, timeout=1.5, phrase_time_limit=15)
             except Exception as e:
                 print("Errore nell'ascolto:", e)
                 continue

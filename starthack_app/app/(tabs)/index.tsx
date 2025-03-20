@@ -1,12 +1,30 @@
 // App.js
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Dimensions } from 'react-native';
-import { VictoryChart, VictoryLine, VictoryTheme, VictoryAxis, VictoryVoronoiContainer } from 'victory';
+import { 
+  VictoryChart, 
+  VictoryCandlestick, 
+  VictoryTheme, 
+  VictoryAxis, 
+  VictoryTooltip,
+  createContainer
+} from 'victory';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+
+// Crea il container combinato per zoom e voronoi (tooltip)
+const VictoryZoomVoronoiContainer = createContainer("zoom", "voronoi");
 
 export default function App() {
   const [pollingActive, setPollingActive] = useState(false);
-  const [registrazioni, setRegistrazioni] = useState([]);
+  interface RecordType {
+    timestamp: string;
+    open: number;
+    close: number;
+    high: number;
+    low: number;
+  }
+  const [registrazioni, setRegistrazioni] = useState<RecordType[]>([]);
+  const [companyName, setCompanyName] = useState("");
 
   // Avvia il polling solo se il bottone è stato premuto (pollingActive true)
   useEffect(() => {
@@ -17,104 +35,109 @@ export default function App() {
           console.log("fetching...");
           const response = await fetch('http://localhost:5000/registrazioni');
           const json = await response.json();
-          console.log("Registrazioni:", json.registrazioni);
-          // Se il JSON contiene dati, li aggiorno nello stato
-          if (json.registrazioni && json.registrazioni.length > 0) {
-            setRegistrazioni(json.registrazioni);
+          
+          // Controlla se ci sono dati nel JSON
+          const companies = Object.keys(json);
+          if (companies.length > 0) {
+            const selectedCompany = companies[0];
+            setRegistrazioni(json[selectedCompany]);
+            setCompanyName(selectedCompany);
           }
         } catch (error) {
           console.error('Errore nel fetch:', error);
         }
-      }, 5000);
+      }, 2000);
     }
     return () => clearInterval(interval);
   }, [pollingActive]);
 
-  // Determino quale dataset usare: se sono presenti registrazioni uso questi dati, altrimenti dati simulati
-  const dataToDisplay = registrazioni.length < 0 ? registrazioni : [
-    { x: 1, y: 150 },
-    { x: 2, y: 155 },
-    { x: 3, y: 153 },
-    { x: 4, y: 160 },
-    { x: 5, y: 158 },
-    { x: 6, y: 165 },
-    { x: 7, y: 150 },
-    { x: 8, y: 150 },
-    { x: 9, y: 150 },
-    { x: 10, y: 150 },
-    { x: 11, y: 150 },
-    { x: 12, y: 150 },
-    { x: 13, y: 150 },
-    { x: 14, y: 150 },
-    { x: 15, y: 150 },
-    { x: 16, y: 150 },
-    { x: 17, y: 150 },
-    { x: 18, y: 150 },
-    { x: 19, y: 150 },
-    { x: 20, y: 150 },
-    { x: 21, y: 150 },
-    { x: 22, y: 150 },
-    { x: 23, y: 150 },
-    { x: 24, y: 150 },
-    { x: 25, y: 150 },
-    { x: 26, y: 150 },
-    { x: 27, y: 150 },
-    { x: 28, y: 150 },
-    { x: 29, y: 150 },
-    { x: 30, y: 150 },
-    { x: 31, y: 150 },
-    { x: 32, y: 150 },
-    { x: 33, y: 190 },
-  ];
+  // Trasforma i dati ricevuti in un formato compatibile con VictoryCandlestick
+  const transformedData = registrazioni.length > 0 
+    ? registrazioni.map(record => ({
+        x: new Date(record.timestamp),
+        open: record.open,
+        close: record.close,
+        high: record.high,
+        low: record.low,
+      }))
+    : [
+        { x: new Date("2024-03-20"), open: 181.81, close: 179.73, high: 182.67, low: 174.0 },
+        { x: new Date("2024-03-21"), open: 186.12, close: 178.68, high: 187.65, low: 177.66 },
+        { x: new Date("2024-03-22"), open: 177.01, close: 179.65, high: 180.76, low: 175.05 },
+        { x: new Date("2024-03-25"), open: 172.75, close: 178.63, high: 182.78, low: 172.0 },
+        { x: new Date("2024-03-26"), open: 179.54, close: 177.87, high: 182.59, low: 176.33 },
+        { x: new Date("2024-03-27"), open: 179.93, close: 179.59, high: 181.21, low: 175.41 },
+        { x: new Date("2024-03-28"), open: 179.59, close: 180.49, high: 183.38, low: 178.3 },
+      ];
 
-  // Calcolo del trend: se l'ultimo dato è maggiore del primo, trend in rialzo
-  const trend = dataToDisplay[dataToDisplay.length - 1].y - dataToDisplay[0].y;
-  const trendIcon = trend > 0 
-    ? <MaterialCommunityIcons name="arrow-up-bold" size={28} color="#00FF00" />
-    : <MaterialCommunityIcons name="arrow-down-bold" size={28} color="#FF4500" />;
+  // Calcola il trend percentuale
+  const trendPercent = (
+    ((transformedData[transformedData.length - 1].close - transformedData[0].close) /
+      transformedData[0].close) *
+    100
+  ).toFixed(2);
 
-  // Calcolo i limiti per x e y dai dati
-  const xValues = dataToDisplay.map(d => d.x);
-  const yValues = dataToDisplay.map(d => d.y);
-  const minX = Math.min(...xValues);
-  const maxX = Math.max(...xValues);
+  // Calcola i limiti per gli assi
+  const xValues = transformedData.map(d => d.x);
+  const yValues = transformedData.reduce((acc: number[], d) => acc.concat([d.open, d.close, d.high, d.low]), []);
+  const minX = new Date(Math.min(...xValues.map(d => d.getTime())));
+  const maxX = new Date(Math.max(...xValues.map(d => d.getTime())));
   const minY = Math.min(...yValues);
   const maxY = Math.max(...yValues);
 
+  const xTickCount = registrazioni.length > 0 ? (registrazioni.length > 31 ? 31 : registrazioni.length) : 7;
+  const yTickCount = registrazioni.length > 0 ? (registrazioni.length > 1 ? 10 : registrazioni.length) : 7;
+
   return (
     <View style={styles.container}>
-      {/* Card per i dati */}
       <View style={styles.card}>
         {pollingActive ? (
-          // Se è attivo il polling, controllo se sono già arrivate registrazioni
           registrazioni.length > 0 ? (
-            <>
-              {/* Header della card con nome e ticker */}
+            <> 
               <View style={styles.chartHeader}>
-                <Text style={styles.stockTitle}>Apple</Text>
+                <Text style={styles.stockTitle}>{companyName}</Text>
                 <View style={styles.tickerContainer}>
-                  <Text style={styles.tickerText}>AAPL</Text>
-                  {trendIcon}
+                  <Text style={styles.tickerText}>{trendPercent}%</Text>
+                  {parseFloat(trendPercent) > 0 
+                    ? <MaterialCommunityIcons name="arrow-up-bold" size={28} color="#00FF00" />
+                    : <MaterialCommunityIcons name="arrow-down-bold" size={28} color="#FF4500" />
+                  }
                 </View>
               </View>
-              {/* Container del grafico */}
               <View style={styles.chartContainer}>
                 <VictoryChart
                   theme={VictoryTheme.material}
                   width={Dimensions.get('window').width - 80}
-                  domain={{ x: [minX, maxX], y: [minY, maxY] }}
                   padding={{ top: 20, bottom: 30, left: 50, right: 20 }}
+                  domain={{
+                    x: [minX, maxX],
+                    y: [minY, maxY],
+                  }}
+                  // Usa il container combinato per abilitare zoom e tooltip
                   containerComponent={
-                    <VictoryVoronoiContainer
-                      labels={({ datum }) => `x: ${datum.x}, y: ${datum.y}`}
+                    <VictoryZoomVoronoiContainer
+                      // Prop per configurare lo zoom, ad esempio limitandolo all'asse x:
+                      zoomDimension="x"
+                      // Configura i tooltip come prima:
+                      labels={({ datum }) =>
+                        `Data: ${new Date(datum.x).toLocaleDateString()}\nOpen: ${datum.open}\nHigh: ${datum.high}\nLow: ${datum.low}\nClose: ${datum.close}`
+                      }
+                      labelComponent={
+                        <VictoryTooltip 
+                          flyoutStyle={{ fill: "#1e1e1e", stroke: "#ccc" }}
+                          style={{ fill: "#ccc", fontSize: 12 }}
+                          cornerRadius={5}
+                        />
+                      }
                     />
                   }
-                  style={{
-                    parent: { backgroundColor: '#1e1e1e' }
-                  }}
                 >
                   <VictoryAxis 
-                    tickCount={70}
+                    tickCount={xTickCount}
+                    tickFormat={(t) => {
+                      const date = new Date(t);
+                      return `${date.getDate()}/${date.getMonth() + 1}`;
+                    }}
                     style={{
                       axis: { stroke: '#ccc' },
                       tickLabels: { fill: '#ccc' },
@@ -122,46 +145,37 @@ export default function App() {
                     }}
                   />
                   <VictoryAxis 
-                    dependentAxis 
-                    tickCount={20}
+                    dependentAxis
+                    tickCount={yTickCount}
                     style={{
                       axis: { stroke: '#ccc' },
                       tickLabels: { fill: '#ccc' },
                       grid: { stroke: '#555' }
                     }}
                   />
-                  <VictoryLine 
-                    data={dataToDisplay}
+                  <VictoryCandlestick 
+                    data={transformedData}
+                    candleColors={{ positive: "#00FF00", negative: "#FF4500" }}
                     animate={{ onLoad: { duration: 1000 } }}
-                    style={{
-                      data: { 
-                        stroke: trend > 0 ? '#00FF00' : '#FF4500', 
-                        strokeWidth: 3 
-                      }
-                    }}
                   />
                 </VictoryChart>
               </View>
             </>
           ) : (
-            <Text style={styles.placeholder}>
-              In attesa dei dati...
-            </Text>
+            <Text style={styles.placeholder}>In attesa dei dati...</Text>
           )
         ) : (
-          <Text style={styles.placeholder}>
-            Premi il bottone per iniziare la lettura dei dati
-          </Text>
+          <Text style={styles.placeholder}>Premi il bottone per iniziare la lettura dei dati</Text>
         )}
       </View>
-
-      {/* Bottone rotondo stile Siri */}
-      <TouchableOpacity
-        style={styles.siriButton}
-        onPress={() => setPollingActive(true)}
-      >
-        <MaterialCommunityIcons name="microphone" size={32} color="#fff" />
-      </TouchableOpacity>
+      {!pollingActive && (
+  <TouchableOpacity
+    style={styles.siriButton}
+    onPress={() => setPollingActive(true)}
+  >
+    <MaterialCommunityIcons name="microphone" size={32} color="#fff" />
+  </TouchableOpacity>
+)}
     </View>
   );
 }
@@ -175,7 +189,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   card: {
-    width: '95%',
+    width: '100%',
     height: '80%',
     minHeight: 300,
     backgroundColor: '#1e1e1e',
@@ -185,7 +199,7 @@ const styles = StyleSheet.create({
     padding: 20,
     flexDirection: 'column',
     justifyContent: 'flex-start',
-    marginBottom: 30,
+    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
@@ -217,6 +231,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 10,
     marginTop: 30,
+    marginBottom: 10,
   },
   tickerText: {
     fontSize: 28,
