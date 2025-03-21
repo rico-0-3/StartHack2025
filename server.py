@@ -45,7 +45,7 @@ def speech_recognition_loop():
     print("Calibrazione completata. In ascolto per la parola trigger.")
 
     # Lista di lingue da provare
-    languages = ["it-IT", "en-US"]
+    languages = ["en-US"]
     
     while True:
         with mic as source:
@@ -70,10 +70,10 @@ def speech_recognition_loop():
                 break
         if recognized_text:
             # Verifica se il testo contiene il trigger "ciao"
-            if "ciao" in recognized_text.lower():
-                print("Trigger 'ciao' rilevato.")
+            if "hello" in recognized_text.lower():
+                print("Trigger 'hello' rilevato.")
                 parole = recognized_text.lower().split()
-                index = parole.index("ciao")
+                index = parole.index("hello")
                 # Se ci sono parole dopo "ciao", le usiamo come query
                 if index < len(parole) - 1:
                     post_trigger = " ".join(parole[index+1:])
